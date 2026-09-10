@@ -1,0 +1,39 @@
+local RS = cloneref(game:GetService("ReplicatedStorage"))
+local TS = cloneref(game:GetService("TeleportService"))
+
+local placeKey
+for _, c in RS.Vendor.EnvironmentTools:GetChildren() do
+    local ok, lib = pcall(require, cloneref(c))
+    if ok and lib.IDs then
+        for k, v in lib.IDs do
+            if v == game.PlaceId then
+                placeKey = k
+                break
+            end
+        end
+    end
+    if placeKey then break end
+end
+if not placeKey or placeKey == "MAIN" then return end
+
+local td = TS:GetLocalPlayerTeleportData()
+local rem = RS.Remotes
+
+if type(td) == "table" and td.serverCode then
+    local ownerId
+    local r = table.pack(pcall(cloneref(rem.GameServices.ToServer.GetPrivateServerOwnerId).InvokeServer,
+        rem.GameServices.ToServer.GetPrivateServerOwnerId))
+    if r[1] and r[2] and type(r[3]) == "number" then ownerId = r[3] end
+
+    if not ownerId then
+        r = table.pack(pcall(cloneref(rem.ServerSelectorService.ToServer.FetchPrivateServersByCode).InvokeServer,
+            rem.ServerSelectorService.ToServer.FetchPrivateServersByCode, tostring(td.serverCode)))
+        if r[1] and r[2] and type(r[3]) == "table" then ownerId = r[3].ownerId end
+    end
+
+    if ownerId then
+        cloneref(rem.ServerSelectorService.ToServer.JoinPrivateServerPlace):InvokeServer(ownerId, placeKey)
+    end
+elseif game.JobId ~= "" then
+    cloneref(rem.ServerSelectorService.ToServer.JoinServerInstance):InvokeServer(placeKey, game.JobId)
+end
