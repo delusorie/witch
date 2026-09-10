@@ -17,6 +17,7 @@ local RunService = cloneref(game:GetService("RunService"))
 
 local Settings = {
 	Enabled = false,
+	IgnoreFriends = true,
 	DetectionRange = 9999,
 	BurstAmount = 80,
 	CPS = 9999,
@@ -190,7 +191,7 @@ local function scanTarget()
 		local targetChar = target:IsA("Player") and target.Character or target
 		if targetChar and targetChar ~= character and targetChar:FindFirstChild("HumanoidRootPart") then
 			local plr = target:IsA("Player") and target or Players:GetPlayerFromCharacter(targetChar)
-			if plr and _friendCache[plr.UserId] then continue end
+			if Settings.IgnoreFriends and plr and _friendCache[plr.UserId] then continue end
 
 			local h = targetChar:FindFirstChildOfClass("Humanoid")
 			if h and h.Health <= 0 then continue end
