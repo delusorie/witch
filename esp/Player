@@ -1,0 +1,451 @@
+local cloneref = cloneref or function(o) return o end
+
+local Players   = cloneref(game:GetService("Players"))
+local RS        = cloneref(game:GetService("RunService"))
+local Workspace = cloneref(game:GetService("Workspace"))
+local LP        = Players.LocalPlayer
+local Core      = (gethui and gethui()) or cloneref(game:GetService("CoreGui"))
+
+local toolLookup = {}
+pcall(function()
+    local ToolData = require(cloneref(game.ReplicatedStorage.ModuleScripts.Data.ToolData))
+    for key, data in pairs(ToolData) do
+        local entry = { name = data.name, image = data.image }
+        toolLookup[key] = entry
+        if type(data.toolIndex) == "string" then
+            toolLookup[data.toolIndex] = entry
+        end
+    end
+end)
+
+local CONFIG       = { enabled = false, showBodies = true, showAstral = true, showInvisible = true }
+getgenv().diarianESPConfig = CONFIG
+
+local RANGE        = 900
+local FB           = Enum.Font.GothamBold
+local FR           = Enum.Font.Gotham
+local FRIEND_COLOR = Color3.fromRGB(255, 215, 0)
+local FRIEND_ICON  = "rbxassetid://136046860071408"
+local WHITE        = Color3.new(1, 1, 1)
+local BLACK        = Color3.new(0, 0, 0)
+local PINK         = Color3.fromRGB(255, 100, 255)
+local LOBBY_COLOR  = Color3.fromRGB(120, 200, 255)
+local BODY_COLOR   = Color3.fromRGB(255, 50, 50)
+
+local COL = {
+    Heretic = Color3.fromRGB(188, 101, 169),
+    Hybrid = Color3.fromRGB(245, 185, 102),
+    Original = Color3.fromRGB(178, 58, 64),
+    Phoenix = Color3.fromRGB(223, 129, 96),
+    Siphoner = Color3.fromRGB(114, 168, 202),
+    Tribrid = Color3.fromRGB(36, 70, 242),
+    TransitioningVampire = Color3.fromRGB(138, 49, 52),
+    Vampire = Color3.fromRGB(205, 54, 59),
+    Werewitch = Color3.fromRGB(201, 69, 150),
+    Werewolf = Color3.fromRGB(249, 228, 103),
+    Witch = Color3.fromRGB(195, 145, 195),
+    Mortal = Color3.fromRGB(195, 145, 195),
+    Hunter = Color3.fromRGB(120, 199, 114),
+    Immortal = Color3.fromRGB(126, 53, 248),
+    Muse = Color3.fromRGB(254, 194, 14),
+    TransitioningHeretic = Color3.fromRGB(188, 101, 169),
+    TransitioningHybrid = Color3.fromRGB(245, 185, 102),
+    TransitioningTribrid = Color3.fromRGB(36, 70, 242),
+    ElderWitch = Color3.fromRGB(195, 145, 195),
+    Fairy = Color3.fromRGB(254, 194, 14)
+}
+local N = {
+    Heretic = "Bloodwitch",
+    Hybrid = "Hybrid",
+    Original = "Firstblood",
+    Phoenix = "Phoenix",
+    Siphoner = "Siphoner",
+    Tribrid = "Triblood",
+    TransitioningVampire = "Trans. Vampire",
+    Vampire = "Vampire",
+    Werewitch = "Werewitch",
+    Werewolf = "Werewolf",
+    Witch = "Witch",
+    Mortal = "Mortal",
+    Hunter = "Hunter",
+    Immortal = "Immortal",
+    Muse = "Muse",
+    TransitioningHeretic = "Trans. Bloodwitch",
+    TransitioningHybrid = "Trans. Hybrid",
+    TransitioningTribrid = "Trans. Triblood",
+    ElderWitch = "Ancestor Witch",
+    Fairy = "Fairy"
+}
+
+local ESP          = {}
+local LIM          = {}
+local _friendCache = {}
+
+local function cacheFriendship(p)
+    if not p or p == LP then return end
+    task.spawn(function()
+        local ok, v = pcall(function() return LP:IsFriendsWith(p.UserId) end)
+        if ok then _friendCache[p.UserId] = v end
+    end)
+end
+
+local function sp(c)
+    if not c or c:GetAttribute("Cured") then return "Mortal" end
+    local s = c:GetAttribute("SpecieType") or "Mortal"
+    return (s == "Witch" and c:GetAttribute("Siphoner")) and "Siphoner" or s
+end
+
+local function inv(c)
+    if not c then return false end
+    if c:GetAttribute("Invisible") or c:GetAttribute("_invisibilityInstant") or c:GetAttribute("Invisique") then return true end
+    local pp = c.PrimaryPart
+    return pp and (pp:HasTag("Invisique") or pp:HasTag("InvisiqueConfero") or pp:HasTag("InvisibilityHandler")) or false
+end
+
+local LobbyCF, LobbySize
+local function refreshLobby()
+    local box = Workspace:FindFirstChild("LobbyArea") and Workspace.LobbyArea:FindFirstChild("Box")
+    if box then
+        local ok, cf, sz = pcall(function()
+            local a, b = box:GetBoundingBox()
+            return a, b
+        end)
+        if ok and cf then
+            LobbyCF = cf; LobbySize = sz
+        end
+    end
+end
+refreshLobby()
+
+local function inLobby(c)
+    if not LobbyCF or not LobbySize or not c then return false end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local pp = hrp.Position
+    local half = LobbySize / 2
+    local mn = LobbyCF.Position - half
+    local mx = LobbyCF.Position + half
+    return pp.X >= mn.X and pp.X <= mx.X and pp.Y >= mn.Y and pp.Y <= mx.Y and pp.Z >= mn.Z and pp.Z <= mx.Z
+end
+
+local function mkStroke(parent, thick, col, trans)
+    local s = Instance.new("UIStroke", parent)
+    s.Thickness = thick; s.Color = col; s.Transparency = trans
+    return s
+end
+
+local function lbl(parent, pos, ts, font, color)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 20); l.Position = pos; l.BackgroundTransparency = 1
+    l.TextSize = ts; l.FontFace = Font.fromEnum(font); l.TextColor3 = color
+    mkStroke(l, 1, BLACK, 0.5)
+    l.Parent = parent
+    return l
+end
+
+local function bill(ador, name, h)
+    local b = Instance.new("BillboardGui")
+    b.Name = name; b.Size = UDim2.new(0, 200, 0, h); b.StudsOffset = Vector3.new(0, 3.5, 0)
+    b.AlwaysOnTop = true; b.MaxDistance = RANGE; b.Adornee = ador; b.Parent = Core
+    return b
+end
+
+local function remove(key)
+    local e = ESP[key]; if not e then return end
+    pcall(function() e.conn:Disconnect() end)
+    pcall(function() e.bill:Destroy() end)
+    if e.anchor then pcall(function() e.anchor:Destroy() end) end
+    ESP[key] = nil
+end
+
+local function addPlayer(p)
+    if p == LP or ESP[p] or LIM[p] then return end
+
+    local c, h
+    for _ = 1, 20 do
+        c = p.Character
+        h = c and (c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Head"))
+        if h and h:IsDescendantOf(Workspace) then break end
+        task.wait(0.1)
+    end
+    if not h or not h:IsDescendantOf(Workspace) then return end
+    if ESP[p] or LIM[p] then return end
+
+    local b = bill(h, "ESP_" .. p.Name, 95)
+
+    local iconFrame                  = Instance.new("Frame", b)
+    iconFrame.Size                   = UDim2.new(1, 0, 0, 22)
+    iconFrame.Position               = UDim2.new(0, 0, 0, 0)
+    iconFrame.BackgroundTransparency = 1
+    iconFrame.Visible                = false
+
+    local icon                       = Instance.new("ImageLabel", iconFrame)
+    icon.Size                        = UDim2.new(0, 22, 0, 22)
+    icon.Position                    = UDim2.new(0.5, -11, 0, 0)
+    icon.BackgroundTransparency      = 1
+    icon.Image                       = FRIEND_ICON
+    icon.ImageColor3                 = FRIEND_COLOR
+
+    local n                          = lbl(b, UDim2.new(0, 0, 0, 24), 19, FB, WHITE)
+    local u                          = lbl(b, UDim2.new(0, 0, 0, 44), 15, FR, WHITE)
+    local s                          = lbl(b, UDim2.new(0, 0, 0, 60), 13, FR, WHITE)
+    local iv                         = lbl(b, UDim2.new(0, 0, 0, 74), 14, FB, PINK)
+    iv.Text                          = "[INVISIVEL]"; iv.Visible = false
+
+    local toolPool                   = {}
+    local function getToolRow(idx)
+        if not toolPool[idx] then
+            local row = {}
+            row.icon = Instance.new("ImageLabel", b)
+            row.icon.Size = UDim2.new(0, 16, 0, 16)
+            row.icon.BackgroundTransparency = 1
+            row.icon.ScaleType = Enum.ScaleType.Fit
+            row.icon.Visible = false
+            row.label = Instance.new("TextLabel")
+            row.label.Size = UDim2.new(0, 145, 0, 20)
+            row.label.BackgroundTransparency = 1
+            row.label.TextSize = 13
+            row.label.FontFace = Font.fromEnum(FR)
+            row.label.TextColor3 = Color3.fromRGB(255, 215, 0)
+            row.label.TextXAlignment = Enum.TextXAlignment.Left
+            mkStroke(row.label, 1, BLACK, 0.5)
+            row.label.Visible = false
+            row.label.Parent = b
+            toolPool[idx] = row
+        end
+        return toolPool[idx]
+    end
+
+    local nStroke                          = n:FindFirstChildOfClass("UIStroke")
+    local _inL, _isFriend, _sp2, _v, _tool = nil, nil, nil, nil, nil
+
+    local conn = RS.RenderStepped:Connect(function()
+        if not h:IsDescendantOf(game) or p.Character ~= c then
+            remove(p)
+            return
+        end
+
+        if not CONFIG.enabled then
+            b.Enabled = false
+            return
+        end
+        b.Enabled = true
+
+        local inL      = inLobby(c)
+        local isFriend = _friendCache[p.UserId] or false
+        local sp2      = inL and "Lobby" or sp(c)
+        local v        = CONFIG.showInvisible and inv(c) or false
+
+        local tools    = {}
+        for _, item in ipairs(c:GetChildren()) do
+            if item:IsA("Tool") then
+                table.insert(tools, { name = item.Name })
+            end
+        end
+        local toolSig = ""
+        for _, t in ipairs(tools) do
+            toolSig = toolSig .. t.name .. ","
+        end
+
+        if inL == _inL and isFriend == _isFriend and sp2 == _sp2 and v == _v and toolSig == _tool then return end
+        _inL                 = inL; _isFriend = isFriend; _sp2 = sp2; _v = v; _tool = toolSig
+
+        local col2           = inL and LOBBY_COLOR or (isFriend and FRIEND_COLOR) or COL[sp2] or
+            Color3.new(0.8, 0.8, 0.8)
+
+        iconFrame.Visible    = isFriend and not inL
+        nStroke.Color        = isFriend and FRIEND_COLOR or BLACK
+        nStroke.Thickness    = isFriend and 1.5 or 1
+        nStroke.Transparency = isFriend and 0.2 or 0.5
+
+        n.Visible            = not inL
+        local displayName    = p:GetAttribute("CharacterName") or p.Name
+        n.Text               = isFriend and ("★ " .. displayName) or displayName
+        n.TextColor3         = col2
+
+        u.Text               = "@" .. p.Name
+        u.TextColor3         = WHITE
+        u.Position           = inL and UDim2.new(0, 0, 0, 24) or UDim2.new(0, 0, 0, 44)
+
+        s.Text               = inL and "[LOBBY]" or (N[sp2] or sp2)
+        s.TextColor3         = col2
+        s.Position           = inL and UDim2.new(0, 0, 0, 44) or UDim2.new(0, 0, 0, 60)
+
+        iv.Visible           = v
+        iv.Position          = inL and UDim2.new(0, 0, 0, 64) or UDim2.new(0, 0, 0, 74)
+
+        local baseH          = v and (inL and 82 or 92) or (inL and 64 or 76)
+        local yOffset        = baseH
+        for idx, t in ipairs(tools) do
+            local row  = getToolRow(idx)
+            local info = toolLookup[t.name]
+            if info then
+                row.icon.Image = info.image or ""
+                row.label.Text = info.name or t.name
+            else
+                row.icon.Image = ""
+                row.label.Text = t.name
+            end
+            row.icon.Visible   = info and info.image ~= nil
+            row.label.Visible  = true
+            row.icon.Position  = UDim2.new(0, 35, 0, yOffset)
+            row.label.Position = UDim2.new(0, 55, 0, yOffset)
+            yOffset            = yOffset + 18
+        end
+        for idx = #tools + 1, #toolPool do
+            toolPool[idx].icon.Visible = false
+            toolPool[idx].label.Visible = false
+        end
+        b.Size = UDim2.new(0, 200, 0, yOffset)
+    end)
+
+    ESP[p] = { bill = b, conn = conn }
+end
+
+local function addBody(model, label, color)
+    if ESP[model] then return end
+    local head
+    for _ = 1, 50 do
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then
+                head = d; break
+            end
+        end
+        if head then break end
+        task.wait(0.1)
+    end
+    local anchor
+    if not head then
+        local ok, cf = pcall(function() return model:GetBoundingBox() end)
+        if ok and cf then
+            anchor = Instance.new("Part")
+            anchor.Anchored = true; anchor.Transparency = 1; anchor.CanCollide = false
+            anchor.CanQuery = false; anchor.CanTouch = false; anchor.Size = Vector3.one * 0.1
+            anchor.CFrame = cf; anchor.Parent = Workspace
+            head = anchor
+        end
+    end
+    if not head then return end
+
+    local b = bill(head, "BODY_" .. model.Name, 22)
+    local n = lbl(b, UDim2.new(0, 0, 0, 0), 18, FB, color)
+    local iv = lbl(b, UDim2.new(0, 0, 0, 20), 13, FB, PINK)
+    iv.Text = "[INVISIVEL]"; iv.Visible = false
+
+    local conn = RS.Heartbeat:Connect(function()
+        if not model:IsDescendantOf(game) then
+            remove(model)
+            return
+        end
+        if anchor and anchor.Parent then
+            local ok, cf = pcall(function() return model:GetBoundingBox() end)
+            if ok and cf then anchor.CFrame = cf end
+        end
+        local cname = model:GetAttribute("CharacterName") or model.Name
+        n.Text = label .. cname
+        local v = CONFIG.showInvisible and inv(model) or false
+        iv.Visible = v
+        b.Size = UDim2.new(0, 200, 0, v and 36 or 20)
+    end)
+    ESP[model] = { bill = b, conn = conn, anchor = anchor }
+end
+
+local function ownerOf(m)
+    local p = Players:FindFirstChild(m.Name)
+    if p then return p end
+    local cn = m:GetAttribute("CharacterName")
+    if cn then
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl:GetAttribute("CharacterName") == cn then return pl end
+        end
+    end
+end
+
+local function onLimboAdd(m)
+    if not m:IsA("Model") then return end
+    task.spawn(function()
+        local o = ownerOf(m)
+        if o then
+            LIM[o] = m; remove(o)
+        end
+        if CONFIG.showBodies then addBody(m, "[CORPO] ", BODY_COLOR) end
+    end)
+end
+
+local function onLimboRem(m)
+    if not m:IsA("Model") then return end
+    remove(m)
+    for o, mm in pairs(LIM) do
+        if mm == m then
+            LIM[o] = nil
+            task.delay(1, function() if o.Character then addPlayer(o) end end)
+            break
+        end
+    end
+end
+
+local function hook(folder)
+    if not folder then return end
+    for _, m in ipairs(folder:GetChildren()) do onLimboAdd(m) end
+    folder.ChildAdded:Connect(onLimboAdd)
+    folder.ChildRemoved:Connect(onLimboRem)
+end
+
+local cf = Workspace:FindFirstChild("playerCloneFolder")
+if cf then
+    hook(cf)
+else
+    Workspace.ChildAdded:Connect(function(child)
+        if child.Name == "playerCloneFolder" then hook(child) end
+    end)
+end
+
+local function scanAstral()
+    local a = Workspace:FindFirstChild("AstralProjection")
+    if not a then return end
+    for _, m in ipairs(a:GetChildren()) do
+        if m:IsA("Model") and not ESP[m] and CONFIG.showAstral then
+            addBody(m, "[CORPO ASTRAL] ", WHITE)
+        end
+    end
+end
+
+local function hookPlayer(p)
+    cacheFriendship(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        remove(p)
+        if not LIM[p] then task.spawn(addPlayer, p) end
+    end)
+    if p.Character then task.spawn(addPlayer, p) end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
+Players.PlayerAdded:Connect(hookPlayer)
+Players.PlayerRemoving:Connect(function(p)
+    remove(p); LIM[p] = nil
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(2)
+        refreshLobby()
+        local c2 = Workspace:FindFirstChild("playerCloneFolder")
+        if c2 then
+            for _, m in ipairs(c2:GetChildren()) do
+                if m:IsA("Model") and not ESP[m] then onLimboAdd(m) end
+            end
+        end
+        pcall(scanAstral)
+        for k in pairs(ESP) do
+            if not k:IsDescendantOf(game) then remove(k) end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP and not ESP[p] and not LIM[p] and p.Character then
+                task.spawn(addPlayer, p)
+            end
+        end
+    end
+end)
+
+return CONFIG
