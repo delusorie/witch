@@ -1,0 +1,155 @@
+local cloneref = cloneref or function(v) return v end
+
+local Players           = cloneref(game:GetService("Players"))
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+
+local LocalPlayer   = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local ModuleScripts = PlayerScripts:WaitForChild("ModuleScripts")
+
+local AmbienceClient = require(cloneref(ModuleScripts:WaitForChild("AmbienceClient")))
+
+local WeatherType = require(cloneref(
+    ReplicatedStorage.ModuleScripts.Enums.WeatherType
+))
+
+local WorldStateType = require(cloneref(
+    ReplicatedStorage.ModuleScripts.Enums.WorldStateType
+))
+
+local TimeHandler = require(cloneref(
+    ReplicatedStorage.ModuleScripts.TimeHandler
+))
+
+local Environment = {}
+
+Environment.Weather    = "Clear"
+Environment.WorldState = "DayTime"
+Environment.Time       = 12
+
+Environment.LockWeather = false
+Environment.LockTime    = false
+
+local WeatherMap = {
+    Clear        = WeatherType.Clear,
+    Fog          = WeatherType.Fog,
+    Cloudy       = WeatherType.Cloudy,
+    Rain         = WeatherType.Rain,
+    ThunderStorm = WeatherType.ThunderStorm,
+    Snow         = WeatherType.Snow,
+    Blizzard     = WeatherType.Blizzard,
+    Birds        = WeatherType.Birds,
+    HellfireRain = WeatherType.HellfireRain
+}
+
+local WorldStateMap = {
+    DayTime          = WorldStateType.DayTime,
+    NightTime        = WorldStateType.NightTime,
+    DayBreak         = WorldStateType.DayBreak,
+    OtherSide        = WorldStateType.OtherSide,
+    AstralProjection = WorldStateType.AstralProjection,
+    TribridStorm     = WorldStateType.TribridStorm,
+    SereneSky        = WorldStateType.SereneSky,
+    Twilight         = WorldStateType.Twilight,
+    BlackAndWhite    = WorldStateType.BlackAndWhite,
+    VibrantColours   = WorldStateType.VibrantColours,
+    Hellfire         = WorldStateType.Hellfire,
+    Nebula           = WorldStateType.Nebula,
+    ShowcaseOne      = WorldStateType.ShowcaseOne,
+    ShowcaseTwo      = WorldStateType.ShowcaseTwo
+}
+
+Environment.WeatherOptions = {
+    "Clear",
+    "Fog",
+    "Cloudy",
+    "Rain",
+    "ThunderStorm",
+    "Snow",
+    "Blizzard",
+    "Birds",
+    "HellfireRain"
+}
+
+Environment.WorldStateOptions = {
+    "DayTime",
+    "NightTime",
+    "DayBreak",
+    "OtherSide",
+    "AstralProjection",
+    "TribridStorm",
+    "SereneSky",
+    "Twilight",
+    "BlackAndWhite",
+    "VibrantColours",
+    "Hellfire",
+    "Nebula",
+    "ShowcaseOne",
+    "ShowcaseTwo"
+}
+
+function Environment.SetWeather(name)
+    local weather = WeatherMap[name]
+    if not weather then return false end
+    Environment.Weather = name
+    AmbienceClient.setWeather(weather, true)
+    return true
+end
+
+function Environment.SetWorldState(name)
+    local state = WorldStateMap[name]
+    if not state then return false end
+    Environment.WorldState = name
+    AmbienceClient.setWorldState(state, true)
+    return true
+end
+
+function Environment.SetTime(hours)
+    hours = tonumber(hours)
+    if not hours then return false end
+    hours = math.clamp(hours, 0, 24)
+    Environment.Time = hours
+    local minutes = math.clamp(math.floor(hours * 60), 0, 1439)
+    TimeHandler.setTimeNoLock(minutes)
+    return true
+end
+
+function Environment.SetWeatherLock(enabled)
+    enabled = enabled == true
+    Environment.LockWeather = enabled
+    AmbienceClient.isWeatherLocked = enabled
+    if enabled then
+        Environment.SetWeather(Environment.Weather)
+    end
+end
+
+function Environment.SetTimeLock(enabled)
+    enabled = enabled == true
+    Environment.LockTime = enabled
+    TimeHandler.isAdminTimeLocked = enabled
+    if enabled then
+        Environment.SetTime(Environment.Time)
+    end
+end
+
+function Environment.GetWeather()
+    return Environment.Weather
+end
+
+function Environment.GetWorldState()
+    return Environment.WorldState
+end
+
+function Environment.GetTime()
+    return Environment.Time
+end
+
+function Environment.IsWeatherLocked()
+    return Environment.LockWeather
+end
+
+function Environment.IsTimeLocked()
+    return Environment.LockTime
+end
+
+return Environment
