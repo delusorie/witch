@@ -1,0 +1,115 @@
+local cloneref = cloneref or function(v) return v end
+
+local Workspace = cloneref(game:GetService("Workspace"))
+
+getgenv().diarianFlags = getgenv().diarianFlags or {}
+
+local BLOODBAG_ICON = "rbxassetid://11970873252"
+
+local esp = {}
+
+local function getMesh(m)
+    local best
+    for _, d in m:GetDescendants() do
+        if d:IsA("MeshPart") and d.MeshId ~= "" and d.Transparency < 1
+            and (not best or d.Size.Magnitude > best.Size.Magnitude) then
+            best = d
+        end
+    end
+    return best
+end
+
+local function countBloodBags(fridge)
+    local spawns = fridge:FindFirstChild("ItemSpawns")
+    if not spawns then return 0 end
+    local count = 0
+    for _, spawn in spawns:GetChildren() do
+        for _, child in spawn:GetChildren() do
+            if child:IsA("Model") and child.Name:lower():find("blood") then
+                count += 1
+            end
+        end
+    end
+    return count
+end
+
+local function addESP(fridge, count)
+    local mesh = getMesh(fridge)
+    if not mesh then return nil end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = mesh
+    bb.Size = UDim2.fromOffset(160, 60)
+    bb.StudsOffsetWorldSpace = Vector3.new(0, mesh.Size.Y * 0.5 + 3, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = 8000
+    bb.LightInfluence = 0
+    bb.Brightness = 1
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.fromOffset(50, 50)
+    img.Position = UDim2.fromOffset(5, 5)
+    img.BackgroundTransparency = 1
+    img.Image = BLOODBAG_ICON
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = bb
+
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.fromOffset(100, 60)
+    t.Position = UDim2.fromOffset(65, 0)
+    t.BackgroundTransparency = 1
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 18
+    t.TextColor3 = Color3.new(1, 0.2, 0.2)
+    t.TextStrokeTransparency = 0.4
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Text = count .. "x"
+    t.Parent = bb
+
+    bb.Parent = fridge
+    return { gui = bb, mesh = mesh, count = count }
+end
+
+local function removeESP(fridge)
+    local e = esp[fridge]
+    if e then
+        esp[fridge] = nil
+        e.gui.Parent = nil
+    end
+end
+
+local fridgesFolder = Workspace:FindFirstChild("Interactables")
+fridgesFolder = fridgesFolder and fridgesFolder:FindFirstChild("Fridges")
+if not fridgesFolder then return end
+
+while task.wait(1) do
+    if not getgenv().diarianFlags.bloodbagESP then
+        for _, e in pairs(esp) do
+            if e and e.gui then e.gui.Enabled = false end
+        end
+        task.wait(1)
+        continue
+    end
+    for _, e in pairs(esp) do
+        if e and e.gui then e.gui.Enabled = true end
+    end
+    for _, fridge in fridgesFolder:GetChildren() do
+        if fridge:IsA("Model") then
+            local count = countBloodBags(fridge)
+            if count > 0 then
+                local e = esp[fridge]
+                if not e then
+                    esp[fridge] = addESP(fridge, count)
+                elseif e.count ~= count then
+                    e.count = count
+                    local label = e.gui:FindFirstChildOfClass("TextLabel")
+                    if label then
+                        label.Text = count .. "x"
+                    end
+                end
+            else
+                removeESP(fridge)
+            end
+        end
+    end
+end
