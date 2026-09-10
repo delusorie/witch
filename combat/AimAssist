@@ -1,0 +1,627 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local clonefunction = clonefunction or function(v)
+    return v
+end
+
+local P = cloneref(game:GetService("Players"))
+local W = cloneref(game:GetService("Workspace"))
+local R = cloneref(game:GetService("ReplicatedStorage"))
+local RS = cloneref(game:GetService("RunService"))
+local CG = cloneref(game:GetService("CoreGui"))
+local CS = cloneref(game:GetService("CollectionService"))
+
+local lp = P.LocalPlayer
+local ms = lp:GetMouse()
+local cam = W.CurrentCamera
+
+local req = clonefunction(require)
+local v2new = clonefunction(Vector2.new)
+local camWTV = clonefunction(cam.WorldToViewportPoint)
+
+local Config = {
+    enabled = false,
+    visualizer = true,
+    ignoreFriends = true,
+    excludeInvisible = true,
+    respectCollisions = true
+}
+
+getgenv().AimAssisterConfig = Config
+
+local oldMarker = CG:FindFirstChild("AimAssistMarker")
+
+if oldMarker then
+    oldMarker:Destroy()
+end
+
+local marker = Instance.new("BillboardGui")
+marker.Name = "AimAssistMarker"
+marker.Size = UDim2.fromOffset(44, 44)
+marker.StudsOffset = Vector3.new(0, 3.2, 0)
+marker.AlwaysOnTop = true
+marker.Adornee = nil
+marker.Enabled = false
+marker.Parent = CG
+
+local markerImage = Instance.new("ImageLabel")
+markerImage.Size = UDim2.fromScale(1, 1)
+markerImage.BackgroundTransparency = 1
+markerImage.Image = "rbxassetid://14599258647"
+markerImage.Parent = marker
+
+local currentTarget = nil
+
+local _redirectRay = false
+local _redirectRaycast = false
+local _forcedHitPosition = nil
+
+local function isInvisible(c)
+    if not c then
+        return false
+    end
+
+    if CS:HasTag(c, "Invisible") then
+        return true
+    end
+
+    local humanoid = c:FindFirstChildOfClass("Humanoid")
+
+    if humanoid and CS:HasTag(humanoid, "Invisible") then
+        return true
+    end
+
+    local root = c:FindFirstChild("HumanoidRootPart")
+
+    if root and CS:HasTag(root, "Invisible") then
+        return true
+    end
+
+    local head = c:FindFirstChild("Head")
+
+    if head and CS:HasTag(head, "Invisible") then
+        return true
+    end
+
+    if c.PrimaryPart and CS:HasTag(c.PrimaryPart, "Invisible") then
+        return true
+    end
+
+    return false
+end
+
+local function isFriend(c)
+    local player = P:GetPlayerFromCharacter(c)
+
+    if not player or player == lp then
+        return false
+    end
+
+    local ok, result = pcall(
+        lp.IsFriendsWith,
+        lp,
+        player.UserId
+    )
+
+    return ok and result == true
+end
+
+local function getAimPart(c)
+    if not c then
+        return nil
+    end
+
+    return c:FindFirstChild("HumanoidRootPart")
+        or c:FindFirstChild("UpperTorso")
+        or c:FindFirstChild("Torso")
+        or c.PrimaryPart
+end
+
+local function hasCollisionBarrier(fromPos, toPos, target)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.IgnoreWater = true
+
+    local filter = {}
+
+    if lp.Character then
+        table.insert(filter, lp.Character)
+    end
+
+    params.FilterDescendantsInstances = filter
+
+    local result = W:Raycast(
+        fromPos,
+        toPos - fromPos,
+        params
+    )
+
+    if not result then
+        return false
+    end
+
+    if target and result.Instance:IsDescendantOf(target) then
+        return false
+    end
+
+    return true
+end
+
+local function findTarget(cp, mp, range)
+    cam = W.CurrentCamera
+
+    if not cam then
+        return nil
+    end
+
+    if not Config.enabled then
+        return nil
+    end
+
+    local ent = W:FindFirstChild("Entities")
+
+    if not ent then
+        return nil
+    end
+
+    local char = lp.Character
+    local vp = cam.ViewportSize
+
+    local best = nil
+    local bestDistance = math.huge
+
+    for _, c in ipairs(ent:GetChildren()) do
+        if c ~= char and c.Parent then
+            local humanoid = c:FindFirstChildOfClass("Humanoid")
+            local aimPart = getAimPart(c)
+
+            if humanoid
+                and humanoid.Health > 0
+                and aimPart then
+                if Config.excludeInvisible and isInvisible(c) then
+                    continue
+                end
+
+                if Config.ignoreFriends and isFriend(c) then
+                    continue
+                end
+
+                local distance3D = (
+                    cp - aimPart.Position
+                ).Magnitude
+
+                if distance3D <= range then
+                    local sp, visible = camWTV(
+                        cam,
+                        aimPart.Position
+                    )
+
+                    if visible
+                        and sp.X >= 0
+                        and sp.X <= vp.X
+                        and sp.Y >= 0
+                        and sp.Y <= vp.Y then
+                        if Config.respectCollisions
+                            and hasCollisionBarrier(
+                                cp,
+                                aimPart.Position,
+                                c
+                            ) then
+                            continue
+                        end
+
+                        local distance2D = (
+                            mp - v2new(
+                                sp.X,
+                                sp.Y
+                            )
+                        ).Magnitude
+
+                        if distance2D < bestDistance then
+                            bestDistance = distance2D
+                            best = c
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+local function hookAbilityBegin(mod)
+    if not mod or not mod.begin then
+        return
+    end
+
+    local originalBegin = mod.begin
+
+    mod.begin = function(self, ...)
+        local args = table.pack(...)
+
+        if currentTarget and args[3] then
+            local aimPart = getAimPart(currentTarget)
+
+            if aimPart then
+                local char = lp.Character
+
+                local root = char and (
+                    char:FindFirstChild("HumanoidRootPart")
+                    or char.PrimaryPart
+                )
+
+                if root then
+                    local origin = root.Position
+                    local targetPos = aimPart.Position
+                    local delta = targetPos - origin
+
+                    if delta.Magnitude > 0.001 then
+                        args[3] = CFrame.lookAt(
+                            origin,
+                            origin + delta.Unit * 400
+                        ) * CFrame.Angles(
+                            0,
+                            -math.pi / 2,
+                            0
+                        )
+                    end
+                end
+            end
+        end
+
+        return originalBegin(
+            self,
+            table.unpack(
+                args,
+                1,
+                args.n
+            )
+        )
+    end
+end
+
+local originalNS
+
+originalNS = hookmetamethod(
+    game,
+    "__namecall",
+    newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+
+        if self == W.CurrentCamera
+            and _redirectRay
+            and currentTarget
+            and (
+                method == "ScreenPointToRay"
+                or method == "ViewportPointToRay"
+            ) then
+            local aimPart = getAimPart(currentTarget)
+
+            if aimPart then
+                local camera = W.CurrentCamera
+
+                if camera then
+                    local aimPos = aimPart.Position
+                    local origin = camera.CFrame.Position
+                    local delta = aimPos - origin
+
+                    if delta.Magnitude > 0.001 then
+                        _redirectRay = false
+                        _redirectRaycast = true
+                        _forcedHitPosition = aimPos
+
+                        return Ray.new(
+                            origin,
+                            delta.Unit
+                        )
+                    end
+                end
+            end
+
+            _redirectRay = false
+            _redirectRaycast = false
+            _forcedHitPosition = nil
+        end
+
+        if self == W
+            and method == "Raycast"
+            and _redirectRaycast
+            and _forcedHitPosition then
+            local args = table.pack(...)
+
+            _redirectRaycast = false
+
+            local targetPosition = _forcedHitPosition
+            _forcedHitPosition = nil
+
+            local origin = args[1]
+            local oldDirection = args[2]
+
+            if typeof(origin) == "Vector3"
+                and typeof(oldDirection) == "Vector3" then
+                local delta = targetPosition - origin
+
+                if delta.Magnitude > 0.001 then
+                    local distance = math.max(
+                        oldDirection.Magnitude,
+                        delta.Magnitude
+                    )
+
+                    args[2] = delta.Unit * distance
+                end
+            end
+
+            return originalNS(
+                self,
+                table.unpack(
+                    args,
+                    1,
+                    args.n
+                )
+            )
+        end
+
+        return originalNS(self, ...)
+    end)
+)
+
+RS.RenderStepped:Connect(function()
+    cam = W.CurrentCamera
+
+    local char = lp.Character
+
+    local root = char and (
+        char:FindFirstChild("HumanoidRootPart")
+        or char.PrimaryPart
+    )
+
+    if not root then
+        marker.Enabled = false
+        marker.Adornee = nil
+        currentTarget = nil
+        return
+    end
+
+    local mp = v2new(
+        ms.X,
+        ms.Y
+    )
+
+    local target = findTarget(
+        root.Position,
+        mp,
+        math.huge
+    )
+
+    currentTarget = target
+
+    local aimPart = target and getAimPart(target)
+
+    if aimPart then
+        marker.Adornee =
+            target:FindFirstChild("Head")
+            or aimPart
+
+        marker.Enabled = Config.visualizer
+    else
+        marker.Adornee = nil
+        marker.Enabled = false
+    end
+end)
+
+task.defer(function()
+    local AH
+
+    pcall(function()
+        AH = req(
+            lp
+            :WaitForChild("PlayerScripts")
+            :WaitForChild("ModuleScripts")
+            :WaitForChild("AbilityHandler")
+        )
+    end)
+
+    if not AH then
+        return
+    end
+
+    local abilityNames = {
+        "Incendia",
+        "Sol",
+        "SiphonBlast",
+        "SolarisImpulsus",
+        "FireBlast",
+        "Fireball",
+        "DragonBreath",
+        "FlameThrower",
+        "LecutioMaxima",
+        "DarkMagicBlast",
+        "FianteFulguris",
+        "IceShard",
+        "ScreamBlast",
+        "PsychicBlast",
+        "WindTornado",
+        "IgnisInfernum",
+        "IgnisTempestas",
+        "BloodBlade",
+        "Ventus"
+    }
+
+    task.wait(3)
+
+    local abilities =
+        rawget(AH, "__index")
+        or AH
+
+    local abilityTable
+
+    for _, value in pairs(abilities) do
+        if type(value) == "table"
+            and value.Incendia then
+            abilityTable = value
+            break
+        end
+    end
+
+    local function hookModule(mod)
+        if type(mod) ~= "table"
+            or not mod.activated then
+            return
+        end
+
+        local originalActivated = mod.activated
+
+        mod.activated = function(self, ...)
+            if currentTarget then
+                _redirectRaycast = false
+                _forcedHitPosition = nil
+                _redirectRay = true
+            end
+
+            local results = table.pack(
+                originalActivated(
+                    self,
+                    ...
+                )
+            )
+
+            _redirectRay = false
+
+            return table.unpack(
+                results,
+                1,
+                results.n
+            )
+        end
+
+        hookAbilityBegin(mod)
+    end
+
+    if abilityTable then
+        for _, name in ipairs(abilityNames) do
+            hookModule(abilityTable[name])
+        end
+
+        return
+    end
+
+    for _, name in ipairs(abilityNames) do
+        local ok, mod = pcall(function()
+            local module =
+                R.ModuleScripts:FindFirstChild(
+                    name,
+                    true
+                )
+                or lp.PlayerScripts:FindFirstChild(
+                    name,
+                    true
+                )
+
+            if not module then
+                return nil
+            end
+
+            return req(module)
+        end)
+
+        if ok then
+            hookModule(mod)
+        end
+    end
+end)
+
+task.defer(function()
+    local TS
+
+    pcall(function()
+        TS = req(
+            R.ModuleScripts.TargetSystem
+        )
+    end)
+
+    if not TS or not TS.new then
+        return
+    end
+
+    local originalNew = TS.new
+
+    TS.new = function(
+        targetType,
+        abilityInst,
+        callback
+    )
+        local obj = originalNew(
+            targetType,
+            abilityInst,
+            callback
+        )
+
+        if obj
+            and targetType == "Hitscan"
+            and obj.Callback then
+            local originalCallback = obj.Callback
+
+            obj.Callback = function(p1, p2)
+                if p2 then
+                    return originalCallback(
+                        p1,
+                        p2
+                    )
+                end
+
+                local result = originalCallback(
+                    p1,
+                    p2
+                )
+
+                if result then
+                    return result
+                end
+
+                local char = lp.Character
+
+                local root = char and (
+                    char:FindFirstChild("HumanoidRootPart")
+                    or char.PrimaryPart
+                )
+
+                if not root or not p1 then
+                    return
+                end
+
+                local range = p1._range or 999
+
+                cam = W.CurrentCamera
+
+                if not cam then
+                    return
+                end
+
+                local mp
+
+                if p1._isMobile then
+                    mp = v2new(
+                        cam.ViewportSize.X / 2,
+                        cam.ViewportSize.Y / 2
+                    )
+                else
+                    mp = v2new(
+                        ms.X,
+                        ms.Y
+                    )
+                end
+
+                return findTarget(
+                    root.Position,
+                    mp,
+                    range
+                )
+            end
+        end
+
+        return obj
+    end
+end)
