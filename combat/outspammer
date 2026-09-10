@@ -1,0 +1,312 @@
+local cloneref = cloneref or function(o) return o end
+local newcclosure = newcclosure or function(f) return f end
+local checkcaller = checkcaller or function() return false end
+local setstackhidden = setstackhidden or function(...) end
+local getnamecallmethod = getnamecallmethod or get_namecall_method or function() return "" end
+local hookmetamethod = hookmetamethod or function(...) return nil end
+local getconnections = getconnections or function() return {} end
+
+local safe_thread = (oth and oth.spawn) or task.spawn
+
+local Workspace = cloneref(game:GetService("Workspace"))
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+local StarterGui = cloneref(game:GetService("StarterGui"))
+local Players = cloneref(game:GetService("Players"))
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local RunService = cloneref(game:GetService("RunService"))
+
+local Settings = {
+	Enabled = false,
+	DetectionRange = 9999,
+	BurstAmount = 80,
+	CPS = 9999,
+	ScanInterval = 0.0001,
+	CarryInterval = 0.001,
+	BypassDebounce = false,
+}
+
+getgenv().diarianSpecialSpam = Settings
+
+local LocalPlayer = cloneref(Players.LocalPlayer)
+local lastExecution = 0
+local _friendCache = {}
+local _carryDebounce = false
+
+local _character = nil
+local _entitiesCache = nil
+local _entitiesTime = 0
+local _lastScan = 0
+local _cachedTarget = nil
+local _lastCarryCheck = 0
+local _cachedCarried = nil
+
+local function getCharacter()
+	if _character == nil or _character.Parent == nil then
+		_character = LocalPlayer.Character
+	end
+	return _character
+end
+setstackhidden(getCharacter, true)
+
+LocalPlayer.CharacterAdded:Connect(function(c) _character = c end)
+
+local function cacheFriendship(player)
+	if not player or player == LocalPlayer then return end
+	safe_thread(function()
+		local ok, isFriend = pcall(function()
+			return LocalPlayer:IsFriendsWith(player.UserId)
+		end)
+		if ok then _friendCache[player.UserId] = isFriend end
+	end)
+end
+setstackhidden(cacheFriendship, true)
+
+for _, p in ipairs(Players:GetPlayers()) do cacheFriendship(p) end
+Players.PlayerAdded:Connect(cacheFriendship)
+Players.PlayerRemoving:Connect(function(p) _friendCache[p.UserId] = nil end)
+
+local _spawnTimes = {}
+local function trackSpawn(player, character)
+	_spawnTimes[player] = tick()
+end
+setstackhidden(trackSpawn, true)
+
+for _, p in ipairs(Players:GetPlayers()) do
+	if p.Character then trackSpawn(p, p.Character) end
+	p.CharacterAdded:Connect(function(c) trackSpawn(p, c) end)
+end
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local releaseRemote = remotes:WaitForChild("CarryService"):WaitForChild("RequestToReleasePlayer")
+
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local ModuleScripts = PlayerScripts:WaitForChild("ModuleScripts")
+local AbilityHandler = require(ModuleScripts:WaitForChild("AbilityHandler"))
+local ClientDebounce = require(ModuleScripts:WaitForChild("ClientDebounce"))
+
+do
+	local okConn, conns = pcall(getconnections, UserInputService.InputBegan)
+	if okConn and type(conns) == "table" then
+		for _, conn in ipairs(conns) do
+			if conn.Function then
+				local okInfo, src = pcall(debug.getinfo, conn.Function)
+				if okInfo and src and src.source and src.source:find("AutoclickDetection") then
+					pcall(function() conn:Disable() end)
+				end
+			end
+		end
+	end
+
+	local autoRemote = remotes:FindFirstChild("GameServices")
+		and remotes.GameServices:FindFirstChild("ToServer")
+		and remotes.GameServices.ToServer:FindFirstChild("AutoclickerDetected")
+
+	local _origNamecall
+	_origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+		if not checkcaller() then
+			local method = getnamecallmethod()
+			if method == "FireServer" and autoRemote and self == autoRemote then
+				return
+			end
+		end
+		return _origNamecall(self, ...)
+	end))
+
+	if _origNamecall then
+		setstackhidden(_origNamecall, true)
+	end
+
+	local okIdle, idleConns = pcall(getconnections, LocalPlayer.Idled)
+	if okIdle and type(idleConns) == "table" then
+		for _, conn in ipairs(idleConns) do
+			if not conn.ForeignState then
+				pcall(function() conn:Disable() end)
+			end
+		end
+	end
+end
+
+local function scanCarriedPlayer()
+	local char = getCharacter()
+	if not char then return nil end
+
+	for _, child in ipairs(char:GetDescendants()) do
+		if child:IsA("Weld") or child:IsA("WeldConstraint") then
+			local p0, p1 = child.Part0, child.Part1
+			if p0 and p1 then
+				local other = (p0:IsDescendantOf(char) and p1) or (p1:IsDescendantOf(char) and p0)
+				if other and other.Parent and other.Parent:FindFirstChild("Humanoid") and other.Parent ~= char then
+					return other.Parent
+				end
+			end
+		end
+	end
+
+	local cv = char:GetAttribute("Carry") or char:GetAttribute("Carrying") or char:GetAttribute("IsCarrying")
+	if cv then
+		if typeof(cv) == "Instance" then
+			return cv:IsA("Player") and cv.Character or (cv:IsA("Model") and cv)
+		elseif typeof(cv) == "string" then
+			local plr = Players:FindFirstChild(cv)
+			return plr and plr.Character
+		end
+	end
+	return nil
+end
+setstackhidden(scanCarriedPlayer, true)
+
+local function getCarriedPlayer()
+	local now = tick()
+	if now - _lastCarryCheck < Settings.CarryInterval then
+		return _cachedCarried
+	end
+	_lastCarryCheck = now
+	_cachedCarried = scanCarriedPlayer()
+	return _cachedCarried
+end
+setstackhidden(getCarriedPlayer, true)
+
+local function scanTarget()
+	local character = getCharacter()
+	if not character then return nil end
+	local myRoot = character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return nil end
+
+	local closestTarget = nil
+	local shortestDist = Settings.DetectionRange
+
+	local now = tick()
+	local entities = Workspace:FindFirstChild("Entities")
+	if entities then
+		if _entitiesCache == nil or now - _entitiesTime > 1 then
+			_entitiesCache = entities:GetChildren()
+			_entitiesTime = now
+		end
+	else
+		_entitiesCache = Players:GetPlayers()
+	end
+
+	for _, target in pairs(_entitiesCache) do
+		local targetChar = target:IsA("Player") and target.Character or target
+		if targetChar and targetChar ~= character and targetChar:FindFirstChild("HumanoidRootPart") then
+			local plr = target:IsA("Player") and target or Players:GetPlayerFromCharacter(targetChar)
+			if plr and _friendCache[plr.UserId] then continue end
+
+			local h = targetChar:FindFirstChildOfClass("Humanoid")
+			if h and h.Health <= 0 then continue end
+
+			local dist = (myRoot.Position - targetChar.HumanoidRootPart.Position).Magnitude
+			if plr and _spawnTimes[plr] and (tick() - _spawnTimes[plr]) < 1 then
+				return targetChar
+			end
+			if dist < shortestDist then
+				shortestDist = dist
+				closestTarget = targetChar
+			end
+		end
+	end
+	return closestTarget
+end
+setstackhidden(scanTarget, true)
+
+local function getTargetInContact()
+	local now = tick()
+	if now - _lastScan < Settings.ScanInterval then
+		return _cachedTarget
+	end
+	_lastScan = now
+	_cachedTarget = scanTarget()
+	return _cachedTarget
+end
+setstackhidden(getTargetInContact, true)
+
+local function isAnyAnimPlaying(ability)
+	if not ability or not ability._animTracks then return false end
+	for _, track in pairs(ability._animTracks) do
+		if track and track.IsPlaying then
+			return true
+		end
+	end
+	return false
+end
+setstackhidden(isAnyAnimPlaying, true)
+
+RunService.Heartbeat:Connect(function()
+	if not Settings.Enabled then return end
+
+	if not _carryDebounce then
+		local carried = getCarriedPlayer()
+		if carried then
+			_carryDebounce = true
+			safe_thread(function()
+				pcall(function() releaseRemote:InvokeServer(carried) end)
+				task.wait(1)
+				_carryDebounce = false
+			end)
+		end
+	end
+
+	local ability = AbilityHandler.activeAbility
+	if not ability then return end
+
+	local abilityName = ability._name
+
+	if abilityName and ClientDebounce.isAlive(abilityName) then
+		if Settings.BypassDebounce then
+			ClientDebounce.kill(abilityName, true)
+		else
+			return
+		end
+	end
+
+	if isAnyAnimPlaying(ability) then
+		return
+	end
+
+	local now = tick()
+	if now - lastExecution < (1 / Settings.CPS) then return end
+
+	local targetEntity = getTargetInContact()
+	if not targetEntity then return end
+
+	lastExecution = now
+
+	local targetHrp = targetEntity:FindFirstChild("HumanoidRootPart")
+	local targetPos = targetHrp and targetHrp.Position or targetEntity:GetPivot().Position
+
+	if ability._targetSystem then
+		ability._targetSystem.ValidTarget = targetEntity
+		ability._targetSystem.ValidTargetPoint = targetPos
+		if ability._targetSystem.ValidTargets then
+			ability._targetSystem.ValidTargets[targetEntity] = true
+		end
+	end
+	if ability._target ~= nil then
+		ability._target = targetEntity
+	end
+
+	local activateFn = ability.activated or ability.Activate or ability.Activated
+	if type(activateFn) == "function" then
+		pcall(function() activateFn(ability) end)
+	end
+
+	ability._isHolding = true
+	for i = 1, Settings.BurstAmount do
+		task.wait()
+		if abilityName and ClientDebounce.isAlive(abilityName) then
+			break
+		end
+
+		local newChar = false
+		for _, pl in pairs(Players:GetPlayers()) do
+			if pl ~= LocalPlayer and _spawnTimes[pl] and (tick() - _spawnTimes[pl]) < 0.5 then
+				newChar = true
+				break
+			end
+		end
+		if newChar then break end
+	end
+	ability._isHolding = false
+end)
+
+return Settings
