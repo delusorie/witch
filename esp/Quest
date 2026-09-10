@@ -1,0 +1,255 @@
+local cloneref = cloneref or function(v) return v end
+
+local CollectionService = cloneref(game:GetService("CollectionService"))
+local Workspace         = cloneref(game:GetService("Workspace"))
+
+getgenv().diarianFlags = getgenv().diarianFlags or {}
+
+local QUEST_TYPE_FLAG = {
+    PaintCanItem  = "questPaintCans",
+    SoulCoin      = "questSoulCoins",
+    SilasGrimoire = "questTombBook",
+    TrumpetThief  = "questTrumpet",
+}
+
+local QUEST_ICONS = {
+    ["PaintCanItem"]  = { icon = "rbxassetid://77910224514014", label = "Paint Can" },
+    ["SoulCoin"]      = { icon = "rbxassetid://17354011110", label = "Soul Coin" },
+    ["SilasGrimoire"] = { icon = "rbxassetid://15134541237", label = "Silas Grimoire" },
+    ["TrumpetThief"]  = { icon = "rbxassetid://124172244338120", label = "Thief" },
+}
+
+local QUEST_ALIASES = {
+    ["paintcanitem"] = "PaintCanItem",
+    ["paintcan"]     = "PaintCanItem",
+    ["soulcoin"]     = "SoulCoin",
+    ["trumpetthief"] = "TrumpetThief",
+    ["thief"]        = "TrumpetThief",
+}
+
+local esp = {}
+
+local function getMesh(m)
+    local best
+    for _, d in m:GetDescendants() do
+        if d:IsA("MeshPart") and d.MeshId ~= "" and d.Transparency < 1
+            and (not best or d.Size.Magnitude > best.Size.Magnitude) then
+            best = d
+        end
+    end
+    if best then return best end
+    for _, d in m:GetDescendants() do
+        if d:IsA("BasePart") and d.Transparency < 1 then
+            return d
+        end
+    end
+    if m:IsA("BasePart") and m.Transparency < 1 then
+        return m
+    end
+    return nil
+end
+
+local function getQuestType(obj)
+    local lowerName = string.lower(obj.Name)
+    if QUEST_ALIASES[lowerName] then
+        return QUEST_ALIASES[lowerName]
+    end
+    local nameAttr = obj:GetAttribute("Name")
+    if nameAttr then
+        local lowerAttr = string.lower(tostring(nameAttr))
+        if QUEST_ALIASES[lowerAttr] then
+            return QUEST_ALIASES[lowerAttr]
+        end
+    end
+    return nil
+end
+
+local function addESP(obj, questTypeOverride)
+    local questType = questTypeOverride or getQuestType(obj)
+    if not questType then return nil end
+
+    local flagKey = QUEST_TYPE_FLAG[questType]
+    if flagKey and not getgenv().diarianFlags[flagKey] then return nil end
+
+    local info = QUEST_ICONS[questType]
+    if not info then return nil end
+
+    local mesh = getMesh(obj)
+    if not mesh then return nil end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = mesh
+    bb.Size = UDim2.fromOffset(160, 60)
+    bb.StudsOffsetWorldSpace = Vector3.new(0, mesh.Size.Y * 0.5 + 3, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = 8000
+    bb.LightInfluence = 0
+    bb.Brightness = 1
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.fromOffset(50, 50)
+    img.Position = UDim2.fromOffset(5, 5)
+    img.BackgroundTransparency = 1
+    img.Image = info.icon
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = bb
+
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.fromOffset(100, 60)
+    t.Position = UDim2.fromOffset(65, 0)
+    t.BackgroundTransparency = 1
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 14
+    t.TextColor3 = Color3.new(1, 1, 1)
+    t.TextStrokeTransparency = 0.4
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Text = info.label
+    t.Parent = bb
+
+    bb.Parent = obj
+    return { gui = bb, mesh = mesh, questType = questType }
+end
+
+local function removeESP(obj)
+    local e = esp[obj]
+    if e then
+        esp[obj] = nil
+        e.gui.Parent = nil
+    end
+end
+
+local function tryAddESP(obj, questTypeOverride)
+    if esp[obj] then return end
+    local questType = questTypeOverride or getQuestType(obj)
+    if not questType then return end
+    local result = addESP(obj, questTypeOverride)
+    if result then
+        esp[obj] = result
+    end
+end
+
+local function isQuestObject(obj)
+    return getQuestType(obj) ~= nil
+end
+
+local function findBookInTomb(tombPart)
+    for _, child in tombPart:GetChildren() do
+        if child:IsA("BasePart") and string.lower(child.Name) == "silasgrimoire" then
+            return child
+        end
+    end
+    return nil
+end
+
+local function addTombESP(tombPart)
+    if esp[tombPart] then return end
+    if not getgenv().diarianFlags.questTombBook then return end
+    local book = findBookInTomb(tombPart)
+    if not book then return end
+
+    local mesh = getMesh(book) or book
+    local info = QUEST_ICONS["SilasGrimoire"]
+
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = mesh
+    bb.Size = UDim2.fromOffset(160, 60)
+    bb.StudsOffsetWorldSpace = Vector3.new(0, mesh.Size.Y * 0.5 + 3, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = 8000
+    bb.LightInfluence = 0
+    bb.Brightness = 1
+
+    local img = Instance.new("ImageLabel")
+    img.Size = UDim2.fromOffset(50, 50)
+    img.Position = UDim2.fromOffset(5, 5)
+    img.BackgroundTransparency = 1
+    img.Image = info.icon
+    img.ScaleType = Enum.ScaleType.Fit
+    img.Parent = bb
+
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.fromOffset(100, 60)
+    t.Position = UDim2.fromOffset(65, 0)
+    t.BackgroundTransparency = 1
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 14
+    t.TextColor3 = Color3.new(1, 1, 1)
+    t.TextStrokeTransparency = 0.4
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Text = info.label
+    t.Parent = bb
+
+    bb.Parent = book
+    esp[tombPart] = { gui = bb, mesh = mesh, questType = "SilasGrimoire", isTomb = true, book = book }
+end
+
+local function removeTombESP(tombPart)
+    local e = esp[tombPart]
+    if e and e.isTomb then
+        esp[tombPart] = nil
+        e.gui.Parent = nil
+    end
+end
+
+for _, tombPart in CollectionService:GetTagged("SilasTomb") do
+    addTombESP(tombPart)
+end
+
+CollectionService:GetInstanceAddedSignal("SilasTomb"):Connect(function(tombPart)
+    addTombESP(tombPart)
+end)
+
+CollectionService:GetInstanceRemovedSignal("SilasTomb"):Connect(function(tombPart)
+    removeTombESP(tombPart)
+end)
+
+local function scanWorkspace()
+    for _, d in Workspace:GetDescendants() do
+        if (d:IsA("Model") or d:IsA("BasePart") or d:IsA("Tool")) and isQuestObject(d) then
+            tryAddESP(d)
+        end
+    end
+end
+
+scanWorkspace()
+
+Workspace.DescendantAdded:Connect(function(d)
+    if (d:IsA("Model") or d:IsA("BasePart") or d:IsA("Tool")) and isQuestObject(d) then
+        task.wait(0.1)
+        tryAddESP(d)
+    end
+end)
+
+Workspace.DescendantRemoving:Connect(function(d)
+    if esp[d] and not esp[d].isTomb then
+        removeESP(d)
+    end
+end)
+
+while task.wait(1) do
+    for obj, e in pairs(esp) do
+        local flagKey = e.questType and QUEST_TYPE_FLAG[e.questType]
+        local active = not flagKey or (getgenv().diarianFlags[flagKey] == true)
+        if e.gui then e.gui.Enabled = active end
+        if not e.isTomb then
+            if not obj.Parent then
+                removeESP(obj)
+            else
+                local currentMesh = getMesh(obj)
+                if currentMesh and e.mesh ~= currentMesh then
+                    removeESP(obj)
+                    tryAddESP(obj)
+                end
+            end
+        end
+    end
+
+    for _, tombPart in CollectionService:GetTagged("SilasTomb") do
+        local book = findBookInTomb(tombPart)
+        if book and not esp[tombPart] then
+            addTombESP(tombPart)
+        elseif not book and esp[tombPart] then
+            removeTombESP(tombPart)
+        end
+    end
+end
