@@ -1,0 +1,131 @@
+local cloneref = cloneref or function(v) return v end
+
+local Workspace = cloneref(game:GetService("Workspace"))
+
+getgenv().diarianFlags = getgenv().diarianFlags or {}
+
+local PLANT_ICONS = {
+    Aerpine    = "rbxassetid://76318369735459",
+    Arcanith   = "rbxassetid://102483552485614",
+    Derrida    = "rbxassetid://71448172355511",
+    Desirium   = "rbxassetid://126218595373636",
+    Mooncap    = "rbxassetid://75204215935865",
+    Nightshade = "rbxassetid://103131505083823",
+    Perennia   = "rbxassetid://79838905501162",
+    Sanguinia  = "rbxassetid://86012848187115",
+    Senia      = "rbxassetid://100574658366536",
+    Vampite    = "rbxassetid://132957607642358",
+    Wolfsbane  = "rbxassetid://96987804663307",
+    Yarrow     = "rbxassetid://118407781105048",
+}
+
+local function getMesh(m)
+    local best
+    for _, d in m:GetDescendants() do
+        if d:IsA("MeshPart") and d.MeshId ~= "" and d.Transparency < 1
+            and (not best or d.Size.Magnitude > best.Size.Magnitude) then
+            best = d
+        end
+    end
+    return best
+end
+
+local esp = {}
+
+local function addESP(m, mesh)
+    local plantType = m:GetAttribute("PlantType")
+    local name = plantType or m.Name:gsub("Plant", "")
+    local icon = plantType and PLANT_ICONS[plantType]
+
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = mesh
+    bb.Size = UDim2.fromOffset(160, 60)
+    bb.StudsOffsetWorldSpace = Vector3.new(0, mesh.Size.Y * 0.5 + 3, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = 8000
+    bb.LightInfluence = 0
+    bb.Brightness = 1
+
+    if icon then
+        local img = Instance.new("ImageLabel")
+        img.Size = UDim2.fromOffset(50, 50)
+        img.Position = UDim2.fromOffset(5, 5)
+        img.BackgroundTransparency = 1
+        img.Image = icon
+        img.ScaleType = Enum.ScaleType.Fit
+        img.Parent = bb
+    else
+        local vp = Instance.new("ViewportFrame")
+        vp.Size = UDim2.fromOffset(60, 60)
+        vp.BackgroundTransparency = 1
+        vp.Parent = bb
+
+        local c = mesh:Clone()
+        c.Anchored, c.CanCollide, c.CanQuery, c.CanTouch, c.CastShadow = true, false, false, false, false
+        c.Transparency = 0
+        c.CFrame = CFrame.new(Vector3.zero)
+        c.Parent = vp
+
+        local d = math.max(c.Size.X, c.Size.Y, c.Size.Z) * 1.7
+        local cam = Instance.new("Camera")
+        cam.FieldOfView = 45
+        cam.CFrame = CFrame.new(Vector3.new(d * 0.5, d * 0.4, d), Vector3.zero)
+        cam.Parent = vp
+        vp.CurrentCamera = cam
+    end
+
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.fromOffset(100, 60)
+    t.Position = UDim2.fromOffset(65, 0)
+    t.BackgroundTransparency = 1
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 14
+    t.TextColor3 = Color3.new(1, 1, 1)
+    t.TextStrokeTransparency = 0.4
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Text = name
+    t.Parent = bb
+
+    bb.Parent = m
+    return { gui = bb, mesh = mesh }
+end
+
+local function removeESP(m)
+    local e = esp[m]
+    if e then
+        esp[m] = nil
+        e.gui.Parent = nil
+    end
+end
+
+local folder = Workspace:FindFirstChild("Interactables")
+folder = folder and folder:FindFirstChild("Plants")
+if not folder then return end
+
+while task.wait(1) do
+    if not getgenv().diarianFlags.plantESP then
+        for _, e in pairs(esp) do
+            if e and e.gui then e.gui.Enabled = false end
+        end
+        task.wait(1)
+        continue
+    end
+    for _, e in pairs(esp) do
+        if e and e.gui then e.gui.Enabled = true end
+    end
+    for _, m in folder:GetChildren() do
+        if m:IsA("Model") and m.Name:find("Plant") then
+            local mesh = getMesh(m)
+            if mesh then
+                if not esp[m] then
+                    esp[m] = addESP(m, mesh)
+                elseif esp[m].mesh ~= mesh then
+                    removeESP(m)
+                    esp[m] = addESP(m, mesh)
+                end
+            else
+                removeESP(m)
+            end
+        end
+    end
+end
