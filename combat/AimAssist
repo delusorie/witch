@@ -161,9 +161,13 @@ local function findTarget(cp, mp, range)
     end
 
     local ent = W:FindFirstChild("Entities")
-
-    if not ent then
-        return nil
+    local searchList = ent and ent:GetChildren() or {}
+    if #searchList == 0 then
+        for _, pl in ipairs(P:GetPlayers()) do
+            if pl ~= lp and pl.Character then
+                table.insert(searchList, pl.Character)
+            end
+        end
     end
 
     local char = lp.Character
@@ -172,7 +176,7 @@ local function findTarget(cp, mp, range)
     local best = nil
     local bestDistance = math.huge
 
-    for _, c in ipairs(ent:GetChildren()) do
+    for _, c in ipairs(searchList) do
         if c ~= char and c.Parent then
             local humanoid = c:FindFirstChildOfClass("Humanoid")
             local aimPart = getAimPart(c)
