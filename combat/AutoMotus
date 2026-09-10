@@ -1,0 +1,82 @@
+local cloneref = cloneref or function(v) return v end
+local clonefunction = clonefunction or function(v) return v end
+
+local Players    = cloneref(game:GetService("Players"))
+local RunService = cloneref(game:GetService("RunService"))
+local Workspace  = cloneref(game:GetService("Workspace"))
+
+local req = clonefunction(require)
+
+local RANGE_SQ      = 25 * 25
+local LocalPlayer   = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local ModuleScripts = PlayerScripts:WaitForChild("ModuleScripts")
+local AbilityHandler = req(cloneref(ModuleScripts:WaitForChild("AbilityHandler")))
+local ClientDebounce = req(cloneref(ModuleScripts:WaitForChild("ClientDebounce")))
+
+local character   = LocalPlayer.Character
+local myRoot      = character and character:FindFirstChild("HumanoidRootPart")
+local friendCache = {}
+
+local function cacheFriendship(p)
+    if p == LocalPlayer then return end
+    task.spawn(function()
+        local ok, v = pcall(LocalPlayer.IsFriendsWith, LocalPlayer, p.UserId)
+        if ok then friendCache[p.UserId] = v end
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do cacheFriendship(p) end
+Players.PlayerAdded:Connect(cacheFriendship)
+Players.PlayerRemoving:Connect(function(p) friendCache[p.UserId] = nil end)
+LocalPlayer.CharacterAdded:Connect(function(c)
+    character = c
+    myRoot = c:WaitForChild("HumanoidRootPart", 5)
+end)
+
+local function getClosest()
+    if not myRoot then return nil end
+    local myPos    = myRoot.Position
+    local entities = Workspace:FindFirstChild("Entities")
+    local best, bestDSq = nil, RANGE_SQ
+
+    local list = entities and entities:GetChildren() or Players:GetPlayers()
+    for _, v in ipairs(list) do
+        local model = entities and v or v.Character
+        if not model or model == character then continue end
+        local root = model:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+        local h = model:FindFirstChildOfClass("Humanoid")
+        if not h or h.Health <= 0 then continue end
+        local plr = Players:GetPlayerFromCharacter(model)
+        if plr and friendCache[plr.UserId] then continue end
+        local dSq = (root.Position - myPos):Dot(root.Position - myPos)
+        if dSq < bestDSq then bestDSq, best = dSq, model end
+    end
+    return best
+end
+
+local function aimAt(target)
+    if not myRoot then return end
+    local root = target:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local delta = root.Position - myRoot.Position
+    local look  = math.abs(delta.Y) > 3 and delta.Unit or (delta * Vector3.new(1, 0, 1)).Unit
+    myRoot.CFrame = CFrame.new(myRoot.Position, myRoot.Position + look)
+end
+
+RunService.Heartbeat:Connect(function()
+    if not (getgenv().diarianFlags and getgenv().diarianFlags.autoMotus) then return end
+    local ability = AbilityHandler.activeAbility
+    if not ability or ability._name ~= "Motus" then return end
+    if ClientDebounce.isAlive(ability._name) then return end
+    local t = ability._animTracks
+    if t and t.activated and t.activated.IsPlaying then return end
+    local target = getClosest()
+    if not target then return end
+    aimAt(target)
+    local vt = ability._targetSystem and ability._targetSystem.ValidTargets
+    if not vt or not vt[target] then return end
+    pcall(mouse1press)
+    pcall(mouse1release)
+end)
