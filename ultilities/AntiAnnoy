@@ -1,0 +1,155 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local Players = cloneref(game:GetService("Players"))
+local Lighting = cloneref(game:GetService("Lighting"))
+local Workspace = cloneref(game:GetService("Workspace"))
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+
+local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local AntiAnnoy = {
+    Enabled = false
+}
+
+local Connections = {}
+
+local blocked = {
+    BlurEffect = true,
+    ColorCorrectionEffect = true,
+    BloomEffect = true,
+    SunRaysEffect = true,
+    DepthOfFieldEffect = true
+}
+
+local function connect(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(Connections, connection)
+    return connection
+end
+
+local function clean(obj)
+    if not AntiAnnoy.Enabled then
+        return
+    end
+
+    if blocked[obj.ClassName] then
+        obj.Enabled = false
+        return
+    end
+
+    if obj:IsA("GuiObject") then
+        local name = obj.Name:lower()
+
+        if name:find("screentransition", 1, true)
+            or name:find("screenflare", 1, true)
+            or name:find("jumpscare", 1, true) then
+            obj.Visible = false
+        end
+    end
+end
+
+local function scan(container)
+    if not container then
+        return
+    end
+
+    for _, obj in ipairs(container:GetDescendants()) do
+        clean(obj)
+    end
+end
+
+local function start()
+    scan(Lighting)
+    scan(PlayerGui)
+    scan(Workspace.CurrentCamera)
+
+    connect(Lighting.DescendantAdded, clean)
+    connect(PlayerGui.DescendantAdded, clean)
+
+    if Workspace.CurrentCamera then
+        connect(Workspace.CurrentCamera.DescendantAdded, clean)
+    end
+
+    connect(Workspace:GetPropertyChangedSignal("CurrentCamera"), function()
+        local camera = Workspace.CurrentCamera
+
+        if camera then
+            scan(camera)
+            connect(camera.DescendantAdded, clean)
+        end
+    end)
+
+    local Bindables = ReplicatedStorage:FindFirstChild("Bindables")
+    local FusionStates = Bindables and Bindables:FindFirstChild("FusionStates")
+
+    if not FusionStates then
+        return
+    end
+
+    local Instant = FusionStates:FindFirstChild("InstantScreenTransition")
+
+    if Instant and Instant:IsA("BindableEvent") then
+        connect(Instant.Event, function(show)
+            if AntiAnnoy.Enabled and show then
+                task.defer(Instant.Fire, Instant, false)
+            end
+        end)
+    end
+
+    local Toggled = FusionStates:FindFirstChild("ToggledScreenTransition")
+
+    if Toggled and Toggled:IsA("BindableEvent") then
+        connect(Toggled.Event, function(data)
+            if AntiAnnoy.Enabled and not (data and data.turnOff) then
+                task.defer(function()
+                    Toggled:Fire({
+                        turnOff = true,
+                        customTweenInfo = TweenInfo.new(0)
+                    })
+                end)
+            end
+        end)
+    end
+
+    local Sleeping = FusionStates:FindFirstChild("PlayerSleepingEffect")
+    local StopSleeping = FusionStates:FindFirstChild("StopSleepEffect")
+
+    if Sleeping
+        and Sleeping:IsA("BindableEvent")
+        and StopSleeping
+        and StopSleeping:IsA("BindableEvent") then
+        connect(Sleeping.Event, function()
+            if AntiAnnoy.Enabled then
+                task.defer(StopSleeping.Fire, StopSleeping)
+            end
+        end)
+    end
+end
+
+local function stop()
+    for _, connection in ipairs(Connections) do
+        connection:Disconnect()
+    end
+
+    table.clear(Connections)
+end
+
+function AntiAnnoy.SetEnabled(value)
+    value = value == true
+
+    if AntiAnnoy.Enabled == value then
+        return
+    end
+
+    AntiAnnoy.Enabled = value
+
+    if value then
+        start()
+    else
+        stop()
+    end
+end
+
+return AntiAnnoy
