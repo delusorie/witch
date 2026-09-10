@@ -18,7 +18,18 @@ pcall(function()
     end
 end)
 
-local CONFIG       = { enabled = false, showBodies = true, showAstral = true, showInvisible = true }
+local CONFIG       = {
+    enabled = false,
+    showBodies = true,
+    showAstral = true,
+    showInvisible = true,
+    showNames = true,
+    showSpecies = true,
+    showCharName = true,
+    showToolItem = true,
+    friendColor = Color3.fromRGB(255, 215, 0),
+    textSize = 14
+}
 getgenv().diarianESPConfig = CONFIG
 
 local RANGE        = 900
@@ -247,56 +258,87 @@ local function addPlayer(p)
             toolSig = toolSig .. t.name .. ","
         end
 
-        if inL == _inL and isFriend == _isFriend and sp2 == _sp2 and v == _v and toolSig == _tool then return end
-        _inL                 = inL; _isFriend = isFriend; _sp2 = sp2; _v = v; _tool = toolSig
+        local friendCol      = CONFIG.friendColor or FRIEND_COLOR
+        icon.ImageColor3     = friendCol
 
-        local col2           = inL and LOBBY_COLOR or (isFriend and FRIEND_COLOR) or COL[sp2] or
-            Color3.new(0.8, 0.8, 0.8)
+        local ts             = CONFIG.textSize or 14
+        n.TextSize           = ts + 4
+        u.TextSize           = math.max(10, ts)
+        s.TextSize           = math.max(9, ts - 2)
+
+        local col2           = inL and LOBBY_COLOR or (isFriend and friendCol) or COL[sp2] or Color3.new(0.8, 0.8, 0.8)
 
         iconFrame.Visible    = isFriend and not inL
-        nStroke.Color        = isFriend and FRIEND_COLOR or BLACK
+        nStroke.Color        = isFriend and friendCol or BLACK
         nStroke.Thickness    = isFriend and 1.5 or 1
         nStroke.Transparency = isFriend and 0.2 or 0.5
 
-        n.Visible            = not inL
+        local showChar       = (CONFIG.showCharName ~= false) and not inL
+        n.Visible            = showChar
         local displayName    = p:GetAttribute("CharacterName") or p.Name
         n.Text               = isFriend and ("★ " .. displayName) or displayName
         n.TextColor3         = col2
 
+        local showNames      = (CONFIG.showNames ~= false)
+        u.Visible            = showNames
         u.Text               = "@" .. p.Name
         u.TextColor3         = WHITE
-        u.Position           = inL and UDim2.new(0, 0, 0, 24) or UDim2.new(0, 0, 0, 44)
 
+        local showSpec       = (CONFIG.showSpecies ~= false)
+        s.Visible            = showSpec
         s.Text               = inL and "[LOBBY]" or (N[sp2] or sp2)
         s.TextColor3         = col2
-        s.Position           = inL and UDim2.new(0, 0, 0, 44) or UDim2.new(0, 0, 0, 60)
 
         iv.Visible           = v
-        iv.Position          = inL and UDim2.new(0, 0, 0, 64) or UDim2.new(0, 0, 0, 74)
 
-        local baseH          = v and (inL and 82 or 92) or (inL and 64 or 76)
-        local yOffset        = baseH
-        for idx, t in ipairs(tools) do
-            local row  = getToolRow(idx)
-            local info = toolLookup[t.name]
-            if info then
-                row.icon.Image = info.image or ""
-                row.label.Text = info.name or t.name
-            else
-                row.icon.Image = ""
-                row.label.Text = t.name
-            end
-            row.icon.Visible   = info and info.image ~= nil
-            row.label.Visible  = true
-            row.icon.Position  = UDim2.new(0, 35, 0, yOffset)
-            row.label.Position = UDim2.new(0, 55, 0, yOffset)
-            yOffset            = yOffset + 18
+        local yOffset        = 0
+        if isFriend and not inL then yOffset = 22 end
+
+        if showChar then
+            n.Position       = UDim2.new(0, 0, 0, yOffset)
+            yOffset          = yOffset + (ts + 6)
         end
-        for idx = #tools + 1, #toolPool do
+        if showNames then
+            u.Position       = UDim2.new(0, 0, 0, yOffset)
+            yOffset          = yOffset + (ts + 4)
+        end
+        if showSpec then
+            s.Position       = UDim2.new(0, 0, 0, yOffset)
+            yOffset          = yOffset + (ts + 2)
+        end
+        if v then
+            iv.Position      = UDim2.new(0, 0, 0, yOffset)
+            yOffset          = yOffset + 18
+        end
+
+        local showTools      = (CONFIG.showToolItem ~= false)
+        if showTools then
+            for idx, t in ipairs(tools) do
+                local row  = getToolRow(idx)
+                local info = toolLookup[t.name]
+                if info then
+                    row.icon.Image = info.image or ""
+                    row.label.Text = info.name or t.name
+                else
+                    row.icon.Image = ""
+                    row.label.Text = t.name
+                end
+                row.label.TextSize = math.max(10, ts - 1)
+                row.icon.Visible   = info and info.image ~= nil
+                row.label.Visible  = true
+                row.icon.Position  = UDim2.new(0, 35, 0, yOffset)
+                row.label.Position = UDim2.new(0, 55, 0, yOffset)
+                yOffset            = yOffset + 18
+            end
+        end
+
+        local startIdx = showTools and (#tools + 1) or 1
+        for idx = startIdx, #toolPool do
             toolPool[idx].icon.Visible = false
             toolPool[idx].label.Visible = false
         end
-        b.Size = UDim2.new(0, 200, 0, yOffset)
+
+        b.Size = UDim2.new(0, 200, 0, math.max(20, yOffset))
     end)
 
     ESP[p] = { bill = b, conn = conn }
