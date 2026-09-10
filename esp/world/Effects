@@ -1,0 +1,68 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local Lighting = cloneref(game:GetService("Lighting"))
+local Workspace = cloneref(game:GetService("Workspace"))
+
+local Effects = {}
+
+Effects.NoFog = false
+Effects.NoShadows = false
+Effects.FieldOfView = 90
+
+local savedAtmosphere = {}
+
+local function getAtmosphere()
+    return Lighting:FindFirstChildOfClass("Atmosphere")
+end
+
+function Effects.SetNoFog(enabled)
+    enabled = enabled == true
+    Effects.NoFog = enabled
+
+    local atmosphere = getAtmosphere()
+
+    if not atmosphere then
+        return
+    end
+
+    if enabled then
+        savedAtmosphere[atmosphere] = savedAtmosphere[atmosphere] or {
+            Density = atmosphere.Density,
+            Haze = atmosphere.Haze
+        }
+
+        atmosphere.Density = 0
+        atmosphere.Haze = 0
+    else
+        local original = savedAtmosphere[atmosphere]
+
+        if original then
+            atmosphere.Density = original.Density
+            atmosphere.Haze = original.Haze
+            savedAtmosphere[atmosphere] = nil
+        end
+    end
+end
+
+function Effects.SetNoShadows(enabled)
+    enabled = enabled == true
+    Effects.NoShadows = enabled
+
+    Lighting.GlobalShadows = not enabled
+end
+
+function Effects.SetFieldOfView(value)
+    value = math.clamp(tonumber(value) or 90, 60, 120)
+
+    Effects.FieldOfView = value
+
+    local camera = Workspace.CurrentCamera
+
+    if camera then
+        camera.FieldOfView = value
+    end
+end
+
+return Effects
