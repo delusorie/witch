@@ -1,0 +1,78 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+
+local ModuleScripts = ReplicatedStorage:WaitForChild("ModuleScripts")
+
+local CompulsionList = require(
+    ModuleScripts.FusionComponents.ScreenUtils.CompulsionList
+)
+
+local CompulsionActionNames = require(
+    ModuleScripts.Enums.CompulsionActionNames
+)
+
+local AutoCompell = {}
+
+AutoCompell.Enabled = false
+AutoCompell.Selected = "Sleep"
+
+local ActionMap = {
+    WalkAway = CompulsionActionNames.WalkAway,
+    Sleep = CompulsionActionNames.Sleep,
+    FollowMe = CompulsionActionNames.FollowMe,
+    MakeInvisible = CompulsionActionNames.MakeInvisible,
+    TakeStake = CompulsionActionNames.TakeStake
+}
+
+AutoCompell.Options = {
+    "WalkAway",
+    "Sleep",
+    "FollowMe",
+    "MakeInvisible",
+    "TakeStake"
+}
+
+function AutoCompell.SetEnabled(value)
+    AutoCompell.Enabled = value == true
+end
+
+function AutoCompell.SetAction(name)
+    if not ActionMap[name] then
+        return false
+    end
+
+    AutoCompell.Selected = name
+    return true
+end
+
+local OriginalShow = CompulsionList.show
+
+CompulsionList.show = function(self, janitor, availableActions, callback)
+    if AutoCompell.Enabled then
+        local wanted = ActionMap[AutoCompell.Selected]
+
+        if wanted then
+            for _, action in pairs(availableActions) do
+                if action == wanted then
+                    task.defer(function()
+                        callback(action)
+                    end)
+
+                    return true
+                end
+            end
+        end
+    end
+
+    return OriginalShow(
+        self,
+        janitor,
+        availableActions,
+        callback
+    )
+end
+
+return AutoCompell
