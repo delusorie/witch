@@ -1,0 +1,78 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local Players = cloneref(game:GetService("Players"))
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
+local ModuleScripts = PlayerScripts:WaitForChild("ModuleScripts")
+
+local AbilityInventoryNew = require(
+    ModuleScripts:WaitForChild("AbilityInventoryNew")
+)
+
+local FusionStates = ReplicatedStorage
+    :WaitForChild("Bindables")
+    :WaitForChild("FusionStates")
+
+local Decoration = {
+    canDecorate = true,
+    backgroundImage = "18841440725",
+    imageSize = "large",
+    enhancedClarity = true,
+    cursorImage = "128332235381778"
+}
+
+local function cloneDecoration()
+    return {
+        canDecorate = true,
+        backgroundImage = Decoration.backgroundImage,
+        imageSize = Decoration.imageSize,
+        enhancedClarity = Decoration.enhancedClarity,
+        cursorImage = Decoration.cursorImage
+    }
+end
+
+AbilityInventoryNew.canDecorateWheel = function()
+    return true
+end
+
+AbilityInventoryNew.getDecorations = function()
+    return cloneDecoration()
+end
+
+AbilityInventoryNew.saveAbilityWheelDecoration = function(data)
+    if type(data) ~= "table" then
+        return false
+    end
+
+    if data.backgroundImage ~= nil then
+        Decoration.backgroundImage = data.backgroundImage
+    end
+
+    if data.imageSize ~= nil then
+        Decoration.imageSize = data.imageSize
+    end
+
+    if data.enhancedClarity ~= nil then
+        Decoration.enhancedClarity = data.enhancedClarity
+    end
+
+    if data.cursorImage ~= nil then
+        Decoration.cursorImage = data.cursorImage
+    end
+
+    FusionStates.EnabledAbilityWheelDecoration:Fire(
+        cloneDecoration()
+    )
+
+    return true
+end
+
+FusionStates.EnabledAbilityWheelDecoration:Fire(
+    cloneDecoration()
+)
+
+return Decoration
