@@ -49,7 +49,8 @@ local function getClosest()
         local h = model:FindFirstChildOfClass("Humanoid")
         if not h or h.Health <= 0 then continue end
         local plr = Players:GetPlayerFromCharacter(model)
-        if plr and friendCache[plr.UserId] then continue end
+        local ignoreFriends = getgenv().diarianFlags and getgenv().diarianFlags.autoMotusFriends
+        if (ignoreFriends == nil or ignoreFriends == true) and plr and friendCache[plr.UserId] then continue end
         local dSq = (root.Position - myPos):Dot(root.Position - myPos)
         if dSq < bestDSq then bestDSq, best = dSq, model end
     end
