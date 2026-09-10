@@ -1,0 +1,150 @@
+local cloneref = cloneref or function(v)
+    return v
+end
+
+local Lighting = cloneref(game:GetService("Lighting"))
+local Workspace = cloneref(game:GetService("Workspace"))
+
+local Terrain = Workspace:FindFirstChildOfClass("Terrain")
+
+local FPSBooster = {
+    Enabled = false,
+    Level = "Balanced"
+}
+
+local DescendantConnection
+
+local function optimizeBalanced(object)
+    if object:IsA("BasePart") then
+        object.CastShadow = false
+    end
+end
+
+local function optimizePerformance(object)
+    optimizeBalanced(object)
+
+    if object:IsA("ParticleEmitter") then
+        object.Enabled = false
+    elseif object:IsA("Trail") or object:IsA("Beam") then
+        object.Enabled = false
+    elseif object:IsA("Smoke")
+        or object:IsA("Fire")
+        or object:IsA("Sparkles") then
+        object.Enabled = false
+    elseif object:IsA("BasePart") then
+        object.Reflectance = 0
+    end
+end
+
+local function optimizeExtreme(object)
+    optimizePerformance(object)
+
+    if object:IsA("ParticleEmitter") then
+        object.Rate = 0
+    elseif object:IsA("BasePart") then
+        if object.Material ~= Enum.Material.Neon then
+            object.Material = Enum.Material.SmoothPlastic
+        end
+    elseif object:IsA("Decal") or object:IsA("Texture") then
+        object.Transparency = 1
+    end
+end
+
+local function optimizeObject(object)
+    if FPSBooster.Level == "Balanced" then
+        optimizeBalanced(object)
+    elseif FPSBooster.Level == "Performance" then
+        optimizePerformance(object)
+    elseif FPSBooster.Level == "Extreme" then
+        optimizeExtreme(object)
+    end
+end
+
+local function applyLighting()
+    Lighting.GlobalShadows = false
+
+    if FPSBooster.Level == "Performance"
+        or FPSBooster.Level == "Extreme" then
+        for _, object in ipairs(Lighting:GetDescendants()) do
+            if object:IsA("BloomEffect")
+                or object:IsA("BlurEffect")
+                or object:IsA("DepthOfFieldEffect")
+                or object:IsA("SunRaysEffect") then
+                object.Enabled = false
+            end
+        end
+    end
+
+    if FPSBooster.Level == "Extreme" then
+        Lighting.FogEnd = 100000
+
+        if Terrain then
+            pcall(function()
+                Terrain.WaterWaveSize = 0
+            end)
+
+            pcall(function()
+                Terrain.WaterWaveSpeed = 0
+            end)
+
+            pcall(function()
+                Terrain.WaterReflectance = 0
+            end)
+
+            pcall(function()
+                Terrain.WaterTransparency = 1
+            end)
+        end
+    end
+end
+
+local function apply()
+    if not FPSBooster.Enabled then
+        return
+    end
+
+    applyLighting()
+
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        optimizeObject(object)
+    end
+
+    if DescendantConnection then
+        DescendantConnection:Disconnect()
+    end
+
+    DescendantConnection = Workspace.DescendantAdded:Connect(function(object)
+        if FPSBooster.Enabled then
+            task.defer(optimizeObject, object)
+        end
+    end)
+end
+
+function FPSBooster.SetEnabled(value)
+    FPSBooster.Enabled = value == true
+
+    if FPSBooster.Enabled then
+        apply()
+    else
+        if DescendantConnection then
+            DescendantConnection:Disconnect()
+            DescendantConnection = nil
+        end
+    end
+end
+
+function FPSBooster.SetLevel(level)
+    if level ~= "Balanced"
+        and level ~= "Performance"
+        and level ~= "Extreme" then
+        return
+    end
+
+    FPSBooster.Level = level
+
+    if FPSBooster.Enabled then
+        apply()
+    end
+end
+
+return FPSBooster
