@@ -226,9 +226,6 @@ RunService.Heartbeat:Connect(function()
     if ability._targetSystem then
         ability._targetSystem.ValidTarget = targetEntity
         ability._targetSystem.ValidTargetPoint = targetPos
-        if ability._targetSystem.ValidTargets then
-            ability._targetSystem.ValidTargets[targetEntity] = true
-        end
     end
     if ability._target ~= nil then
         ability._target = targetEntity
