@@ -38,7 +38,6 @@ local _entitiesCache = nil
 local _entitiesTime = 0
 local _lastScan = 0
 local _cachedTarget = nil
-local _cachedTarget = nil
 
 local function getCharacter()
     if _character == nil or _character.Parent == nil then
